@@ -1,10 +1,10 @@
-# Maintainer: peuborges <peuborges@proton.me>
+# Maintainer: MCookinho <peuborges@proton.me>
 pkgname=fnaf-cli
 pkgver=1.0.0
 pkgrel=1
 pkgdesc="Five Nights at Freddy's - Terminal Edition for Linux (Bash port)"
 arch=('any')
-url="https://github.com/peuborges/fnaf-cli"
+url="https://github.com/MCookinho/fnaf-cli"
 license=('Unlicense')
 depends=('bash' 'mpg123' 'coreutils')
 makedepends=('git')
