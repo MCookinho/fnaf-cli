@@ -7,12 +7,11 @@ arch=('any')
 url="https://github.com/MCookinho/fnaf-cli"
 license=('Unlicense')
 depends=('bash' 'mpg123' 'coreutils')
-makedepends=('git')
-source=("$pkgname::git+https://github.com/peuborges/fnaf-cli.git")
+source=("https://github.com/MCookinho/fnaf-cli/archive/v$pkgver/$pkgname-$pkgver.tar.gz")
 sha256sums=('SKIP')
 
 package() {
-    cd "$srcdir/$pkgname"
+    cd "$srcdir/$pkgname-$pkgver"
 
     install -Dm755 "fnaf-cli" "$pkgdir/usr/bin/fnaf-cli"
     install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
@@ -21,7 +20,6 @@ package() {
     cp -r assets "$pkgdir/usr/share/$pkgname/"
     cp -r audio "$pkgdir/usr/share/$pkgname/"
     cp -r lib "$pkgdir/usr/share/$pkgname/"
-    cp README.md "$pkgdir/usr/share/$pkgname/"
 
     install -Dm644 "README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
 
