@@ -1,15 +1,15 @@
 # FNaF - CLI Edition (Linux)
 
-Five Nights at Freddy's recriado no terminal para Linux.
+Five Nights at Freddy's recreated in the terminal for Linux.
 
-Port do [fnaf-terminal](https://github.com/136MasterNR/fnaf-terminal) (Batch/Windows) para Bash/Linux.
+Port of [fnaf-terminal](https://github.com/136MasterNR/fnaf-terminal) (Batch/Windows) to Bash/Linux.
 
-## Requisitos
+## Requirements
 
-- **mpg123** - reprodução de áudio MP3
-- Terminal com suporte a ANSI true color (24-bit)
+- **mpg123** - MP3 audio playback
+- Terminal with ANSI true color support (24-bit)
 
-### Instalação do mpg123
+### Installing mpg123
 
 ```bash
 # Arch Linux
@@ -28,40 +28,40 @@ sudo zypper install mpg123
 sudo emerge media-sound/mpg123
 ```
 
-## Como jogar
+## How to play
 
 ```bash
-git clone https://github.com/peuborges/fnaf-cli.git
+git clone https://github.com/MCookinho/fnaf-cli.git
 cd fnaf-cli
 ./fnaf-cli
 ```
 
-Recomendado: terminal com no mínimo 185x52 caracteres, fonte monoespaçada.
+Recommended: terminal with at least 185x52 characters, monospace font.
 
-## Controles
+## Controls
 
-### Tela de título
-- **W**/**1**/**N**: Selecionar "New Game"
-- **S**/**2**/**C**: Selecionar "Continue"
-- **A**/**Espaço**/**Enter**: Iniciar a noite
-- **`** ou **~**: Modo Custom Night
+### Title screen
+- **W**/**1**/**N**: Select "New Game"
+- **S**/**2**/**C**: Select "Continue"
+- **A**/**Space**/**Enter**: Start the night
+- **`** or **~**: Custom Night mode
 
-### Durante o jogo
-- **Q**: Fechar/Abrir porta esquerda
-- **A**: Luz esquerda
-- **E**: Fechar/Abrir porta direita
-- **D**: Luz direita
-- **Espaço**: Abrir câmeras
-  - **0-9**: Selecionar câmera
-  - **-**: Câmera 11
-- **Tab**: Mutar voice call
-- **H**: Buzinar o nariz do Freddy
-- **CTRL+W**: Vitória instantânea
+### During gameplay
+- **Q**: Close/Open left door
+- **A**: Left light
+- **E**: Close/Open right door
+- **D**: Right light
+- **Space**: Open cameras
+  - **0-9**: Select camera
+  - **-**: Camera 11
+- **Tab**: Mute voice call
+- **H**: Honk Freddy's nose
+- **CTRL+W**: Instant win
 
-## Créditos
+## Credits
 
 - **Original (Windows/Batch)**: [136MasterNR/fnaf-terminal](https://github.com/136MasterNR/fnaf-terminal)
 - **Office remake**: [reddit.com/r/fivenightsatfreddys](https://www.reddit.com/r/fivenightsatfreddys/comments/gqd36m/fnaf1_office_remake/)
 - **Five Nights At Freddy's**: Scott Cawthon
 
-Não afiliado ou endossado por Scott Cawthon.
+Not affiliated with or endorsed by Scott Cawthon.
