@@ -13,15 +13,31 @@ source "$LIB_DIR/audio.sh"
 source "$LIB_DIR/save.sh"
 source "$LIB_DIR/input.sh"
 
+ORIG_STTY=$(stty -g 2>/dev/null || echo "")
+ORIG_COLS=$(tput cols 2>/dev/null || echo 80)
+ORIG_LINES=$(tput lines 2>/dev/null || echo 24)
+
 cleanup() {
     pkill -f "mpg123.*fnaf.*" 2>/dev/null || true
     pkill -f "fnaf-cli.*events" 2>/dev/null || true
     rm -rf "$RUN_DIR" 2>/dev/null || true
-    stty echo icanon 2>/dev/null || true
-    printf '\e[0m\e[?25h\e[2J\e[H'
+    if [[ -n $ORIG_STTY ]]; then
+        stty "$ORIG_STTY" 2>/dev/null || true
+    else
+        stty sane echo icanon 2>/dev/null || true
+    fi
+    printf '\033[0m\033[?25h\033[?12l'
+    printf '\033[8;%d;%dt' "$ORIG_LINES" "$ORIG_COLS"
+    printf '\033[2J\033[H'
 }
 
 trap cleanup EXIT INT TERM
+
+int_handler() {
+    cleanup
+    exit 0
+}
+trap int_handler INT
 
 init_display() {
     printf '\e[?25l'
