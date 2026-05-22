@@ -1,0 +1,549 @@
+#!/usr/bin/env bash
+
+readonly PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+readonly DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/fnaf-cli"
+readonly TEMP_DIR="$PROJECT_DIR/temp"
+readonly ASSETS_DIR="$PROJECT_DIR/assets"
+readonly AUDIO_DIR="$PROJECT_DIR/audio"
+readonly LIB_DIR="$PROJECT_DIR/lib"
+
+RGB='\e[48;2;'
+
+source "$LIB_DIR/audio.sh"
+source "$LIB_DIR/save.sh"
+source "$LIB_DIR/input.sh"
+
+cleanup() {
+    pkill -f "mpg123.*fnaf.*" 2>/dev/null || true
+    pkill -f "fnaf-cli.*events" 2>/dev/null || true
+    rm -rf "$TEMP_DIR" "$PROJECT_DIR/office_states" "$PROJECT_DIR/cams_state" \
+          "$PROJECT_DIR/MOVEMENTS.cmd" "$PROJECT_DIR/refresh" "$PROJECT_DIR/SEEN_FOXY" \
+          "$PROJECT_DIR/BATTERY" "$PROJECT_DIR/TIME" "$PROJECT_DIR/saw_freddy" \
+          "$PROJECT_DIR/saw_cams" "$PROJECT_DIR/WIN" 2>/dev/null || true
+    printf '\e[?25h'
+}
+
+trap cleanup EXIT INT TERM
+
+init_display() {
+    printf '\e[?25l'
+    printf '\e[8;52;185t'
+    printf '\e[3;0;0t'
+}
+
+load_save() {
+    mkdir -p "$DATA_DIR"
+    if [[ ! -f "$DATA_DIR/freddy" ]]; then
+        freddy_level=1
+        save_game
+    fi
+    read_game "$DATA_DIR/freddy" freddy_level
+}
+
+main() {
+    load_save
+    init_display
+    rm -f "$PROJECT_DIR/logs.txt" 2>/dev/null || true
+    mkdir -p "$TEMP_DIR"
+
+    if [[ $freddy_level -gt 1 ]]; then
+        TITLE_STATE="_continue"
+    else
+        TITLE_STATE="_new"
+    fi
+
+    audio_start "darkness_music.mp3" "title" "true" 95
+    audio_start "coldprescb.mp3" "title2" "true" 75
+    audio_start "static2.mp3" "title3" "false" 75
+
+    cat "$ASSETS_DIR/title${TITLE_STATE}_o.ans"
+
+    title_screen
+}
+
+title_screen() {
+    while true; do
+        CUSTOM=""
+        DIFFICULTY=""
+
+        cat "$ASSETS_DIR/title${TITLE_STATE}.ans"
+
+        if [[ $TITLE_STATE == "_continue_half" || $TITLE_STATE == "_continue" ]]; then
+            local night=$freddy_level
+            [[ $freddy_level -gt 5 ]] && night=5
+            printf '\e[49;17H\e[48;2;0;0;0mNight %s' "$night"
+        fi
+
+        if [[ $freddy_level -ge 5 ]]; then
+            printf '\e[43;166H\e[s'
+            cat "$ASSETS_DIR/star.ans"
+        fi
+        if [[ $freddy_level -ge 6 ]]; then
+            printf '\e[33;166H\e[s'
+            cat "$ASSETS_DIR/star.ans"
+        fi
+
+        if [[ $TITLE_STATE != "_continue_half" && $TITLE_STATE != "_continue" ]]; then
+            printf '\e[49;17H\e[48;2;0;0;0m       '
+        fi
+
+        [[ ${TITLE_STATE: -5} != "_half" ]] && TITLE_STATE="${TITLE_STATE}_half"
+
+        get_input
+
+        if [[ -z $CHOICE_INPUT || $CHOICE_INPUT == "SPACE" || $CHOICE_INPUT == "A" || $CHOICE_INPUT == "a" ]]; then
+            start_game
+            return
+        fi
+
+        if [[ $CHOICE_INPUT == '`' || $CHOICE_INPUT == '~' ]]; then
+            C_FREDDY=20; C_BONNIE=20; C_CHICA=20; C_FOXY=20
+            [[ $freddy_level -gt 1 ]] && TITLE_STATE="_continue" || TITLE_STATE="_new"
+            custom_night
+            return
+        fi
+
+        case $CHOICE_INPUT in
+            [Ss]|[2C]) TITLE_STATE="_continue_half" ;;
+            [Ww]|[1Nn]) TITLE_STATE="_new_half" ;;
+        esac
+    done
+}
+
+custom_night() {
+    while true; do
+        cat "$ASSETS_DIR/custom_night.ans"
+        printf '\e[35;28H\e[s'; cat "$ASSETS_DIR/$C_FREDDY.ans"
+        printf '\e[35;69H\e[s'; cat "$ASSETS_DIR/$C_BONNIE.ans"
+        printf '\e[35;110H\e[s'; cat "$ASSETS_DIR/$C_CHICA.ans"
+        printf '\e[35;150H\e[s'; cat "$ASSETS_DIR/$C_FOXY.ans"
+
+        get_input
+        if [[ $CHOICE_INPUT == "SPACE" ]]; then
+            DIFFICULTY="$C_FREDDY $C_CHICA $C_BONNIE $C_FOXY"
+            start_game
+            return
+        fi
+        if [[ $CHOICE_INPUT == '`' || $CHOICE_INPUT == '~' ]]; then
+            title_screen
+            return
+        fi
+
+        case ${CHOICE_INPUT^^} in
+            A) [[ $C_FREDDY -gt 0 ]] && ((C_FREDDY--)) ;;
+            S) [[ $C_FREDDY -lt 20 ]] && ((C_FREDDY++)) ;;
+            D) [[ $C_BONNIE -gt 0 ]] && ((C_BONNIE--)) ;;
+            F) [[ $C_BONNIE -lt 20 ]] && ((C_BONNIE++)) ;;
+            G) [[ $C_CHICA -gt 0 ]] && ((C_CHICA--)) ;;
+            H) [[ $C_CHICA -lt 20 ]] && ((C_CHICA++)) ;;
+            J) [[ $C_FOXY -gt 0 ]] && ((C_FOXY--)) ;;
+            K) [[ $C_FOXY -lt 20 ]] && ((C_FOXY++)) ;;
+        esac
+    done
+}
+
+start_game() {
+    audio_stop "title"
+    audio_stop "title2"
+    audio_stop "title3"
+
+    [[ ${TITLE_STATE:0:4} == "_new" ]] && freddy_level=1 && save_game
+
+    if [[ "$DIFFICULTY" == "20 20 20 20" ]]; then
+        audio_start "Laugh_Giggle_Girl_8d.mp3" "sfx" "false" 35
+        cat "$ASSETS_DIR/twenty.ans"; sleep 3; audio_stop "sfx"
+    elif [[ -z $CUSTOM && $freddy_level -eq 1 ]]; then
+        cat "$ASSETS_DIR/newspaper.ans"; sleep 5
+        local nf=$freddy_level; [[ $nf -gt 5 ]] && nf=5
+        cat "$ASSETS_DIR/night_${nf}.ans"
+    else
+        local nf=$freddy_level; [[ $nf -gt 5 ]] && nf=5
+        cat "$ASSETS_DIR/night_${nf}.ans"; sleep 3
+    fi
+
+    game_loop
+}
+
+game_loop() {
+    if [[ -z $CUSTOM ]]; then
+        case $freddy_level in
+            1) DIFFICULTY="0 0 0 0" ;; 2) DIFFICULTY="0 1 1 1" ;;
+            3) DIFFICULTY="0 3 3 4" ;; 4) DIFFICULTY="1 4 4 5" ;;
+            *) DIFFICULTY="3 7 7 8" ;;
+        esac
+    fi
+
+    audio_start "ambience2.mp3" "ambience" "true" 90
+    if [[ -z $CUSTOM ]]; then
+        local vn=$freddy_level; [[ $vn -gt 5 ]] && vn=5
+        audio_start "voiceover${vn}.mp3" "voiceover" "false" 75
+    fi
+    audio_start "Buzz_Fan_Florescent2.mp3" "fan" "true" 25
+
+    TAB=0; REVERSE=""; R_DOOR=0; L_DOOR=0; R_LIGHTS=0; L_LIGHTS=0
+    VIEW="OFFICE"; CAMS_STATE="_1"; CAMS_STATES=""
+    JUMPSCARE="_chica"; BATTERY=99; TIME=12
+
+    BONNIE=0; OLD_BONNIE=0; WS_BONNIE=0; RND_BONNIE=0
+    CHICA=0; OLD_CHICA=0; WS_CHICA=0; RND_CHICA=0
+    FREDDY=0; OLD_FREDDY=0; FOXY=0; OLD_FOXY=0
+    GOLDENFREDDY=0; RND_STAGE=0
+
+    "$LIB_DIR/events.sh" $DIFFICULTY &
+    EVENTS_PID=$!
+
+    while true; do
+        STATELINE=""
+        [[ $R_DOOR -eq 1 ]] && STATELINE="${STATELINE}_doorR"
+        [[ $L_DOOR -eq 1 ]] && STATELINE="${STATELINE}_doorL"
+        if [[ $R_LIGHTS -eq 1 ]]; then
+            [[ $CHICA -ge 6 ]] && STATELINE="${STATELINE}_chica" || STATELINE="${STATELINE}_lightR"
+        fi
+        if [[ $L_LIGHTS -eq 1 ]]; then
+            [[ $BONNIE -ge 6 ]] && STATELINE="${STATELINE}_bonnie" || STATELINE="${STATELINE}_lightL"
+        fi
+        [[ $GOLDENFREDDY -ge 1 ]] && STATELINE="${STATELINE}_goldenfreddy"
+
+        if [[ $VIEW == "OFFICE" ]]; then
+            printf '%s' "$STATELINE" > "$PROJECT_DIR/office_states" 2>/dev/null || true
+            [[ $BONNIE -eq 6 && $WS_BONNIE -eq 1 ]] && audio_start "windowscare.mp3" "sfx" "false" 75 && WS_BONNIE=0
+            [[ $CHICA -eq 6 && $WS_CHICA -eq 1 ]] && audio_start "windowscare.mp3" "sfx" "false" 75 && WS_CHICA=0
+            cat "$ASSETS_DIR/office${STATELINE}${REVERSE}.ans" 2>/dev/null || true
+            printf '\e[51;77H\e[48;2;0;0;0mPress SPACE to open the cams'
+            printf '\e[27;6H\e[0m\e[48;2;94;4;9mQ\e[0m'
+            printf '\e[34;6H\e[0m\e[48;2;67;53;78mA\e[0m'
+            printf '\e[27;175H\e[0m\e[48;2;94;4;9mE\e[0m'
+            printf '\e[34;175H\e[0m\e[48;2;67;53;78mD\e[0m'
+            [[ $TAB -eq 0 ]] && printf '\e[3;6H\e[48;2;22;19;40mPr\e[48;2;28;25;46mes\e[48;2;24;20;43ms TAB to mut\e[48;2;15;12;29me vo\e[48;2;9;7;21mice \e[48;2;0;0;0mcall'
+            REVERSE=""
+        fi
+
+        [[ $CHICA -ne $OLD_CHICA ]] && RND_CHICA=$((RANDOM % 2))
+        [[ $BONNIE -ne $OLD_BONNIE ]] && RND_BONNIE=$((RANDOM % 2))
+
+        CAMS_STATES="$CAMS_STATE"
+        [[ $CAMS_STATE == "_1" && $FREDDY -eq 0 ]] && CAMS_STATES="${CAMS_STATES}_freddy"
+        [[ $CAMS_STATE == "_1" && $BONNIE -eq 0 ]] && CAMS_STATES="${CAMS_STATES}_bonnie"
+        [[ $CAMS_STATE == "_1" && $CHICA -eq 0 ]] && CAMS_STATES="${CAMS_STATES}_chica"
+        if [[ $CAMS_STATES == "_1_freddy_bonnie_chica" ]]; then
+            RND_STAGE=$((RANDOM % 25 + 1))
+            [[ $RND_STAGE -eq 1 ]] && CAMS_STATES="${CAMS_STATES}_"
+        fi
+        [[ $CAMS_STATE == "_2" && $CHICA -eq 1 ]] && CAMS_STATES="${CAMS_STATE}_chica_${RND_CHICA}"
+        [[ $CAMS_STATE == "_2" && $BONNIE -eq 1 ]] && CAMS_STATES="${CAMS_STATE}_bonnie_${RND_BONNIE}"
+        if [[ $CAMS_STATE == "_2" && $FREDDY -eq 1 ]]; then CAMS_STATES="${CAMS_STATE}_freddy"; touch "$PROJECT_DIR/saw_freddy" 2>/dev/null || true; fi
+        [[ $CAMS_STATE == "_3" && $BONNIE -eq 2 ]] && CAMS_STATES="${CAMS_STATES}_bonnie_${RND_BONNIE}"
+        [[ $CAMS_STATE == "_4" && $CHICA -eq 2 ]] && CAMS_STATES="${CAMS_STATES}_chica_${RND_CHICA}"
+        if [[ $CAMS_STATE == "_4" && $FREDDY -eq 2 ]]; then CAMS_STATES="${CAMS_STATES}_freddy"; touch "$PROJECT_DIR/saw_freddy" 2>/dev/null || true; fi
+        [[ $CAMS_STATE == "_5" && $FOXY -eq 1 ]] && CAMS_STATES="${CAMS_STATES}_foxy_1"
+        [[ $CAMS_STATE == "_5" && $FOXY -eq 2 ]] && CAMS_STATES="${CAMS_STATES}_foxy_2"
+        [[ $CAMS_STATE == "_5" && $FOXY -ge 3 ]] && CAMS_STATES="${CAMS_STATES}_foxy_3"
+        [[ $CAMS_STATE == "_6" && $BONNIE -eq 3 ]] && CAMS_STATES="${CAMS_STATES}_bonnie"
+        [[ $CAMS_STATE == "_8" && $BONNIE -eq 4 ]] && CAMS_STATES="${CAMS_STATES}_bonnie"
+        [[ $CAMS_STATE == "_8" && $FOXY -eq 3 ]] && CAMS_STATES="${CAMS_STATE}_foxy"
+        [[ $CAMS_STATE == "_9" && $BONNIE -eq 5 ]] && CAMS_STATES="${CAMS_STATES}_bonnie"
+        [[ $CAMS_STATES == "_9" && $GOLDENFREDDY -eq 1 ]] && CAMS_STATES="${CAMS_STATES}_golden"
+        [[ $CAMS_STATE == "_10" && $CHICA -eq 4 ]] && CAMS_STATES="${CAMS_STATES}_chica_${RND_CHICA}"
+        if [[ $CAMS_STATE == "_10" && $FREDDY -eq 3 ]]; then CAMS_STATES="${CAMS_STATES}_freddy"; touch "$PROJECT_DIR/saw_freddy" 2>/dev/null || true; fi
+        [[ $CAMS_STATE == "_11" && $CHICA -eq 5 ]] && CAMS_STATES="${CAMS_STATES}_chica_${RND_CHICA}"
+        if [[ $CAMS_STATE == "_11" && $FREDDY -ge 4 ]]; then CAMS_STATES="${CAMS_STATES}_freddy"; touch "$PROJECT_DIR/saw_freddy" 2>/dev/null || true; fi
+
+        if [[ $VIEW == "CAMS" ]]; then
+            printf '%s' "$CAMS_STATE" > "$PROJECT_DIR/cams_state" 2>/dev/null || true
+            cat "$ASSETS_DIR/cams${CAMS_STATES}.ans" 2>/dev/null || true
+            [[ $CAMS_STATE == "_1" && $CAMS_STATES == "_1_freddy_bonnie_chica" ]] && printf '\e[49;67H\e[48;2;93;96;124m\e[1mPress SP\e[48;2;4;4;4mACE \e[48;2;128;134;151mt\e[48;2;27;27;27mo c\e[48;2;13;13;13mlose the cams\e[0m'
+            [[ $CAMS_STATE != "_1" ]] && printf '\e[26;143H\e[48;2;67;67;67m\e[1m1\e[0m'
+            [[ $CAMS_STATE != "_2" ]] && printf '\e[30;141H\e[48;2;67;67;67m\e[1m2\e[0m'
+            [[ $CAMS_STATE != "_3" ]] && printf '\e[32;125H\e[48;2;67;67;67m\e[1m3\e[0m'
+            [[ $CAMS_STATE != "_4" ]] && printf '\e[32;176H\e[48;2;67;67;67m\e[1m4\e[0m'
+            [[ $CAMS_STATE != "_5" ]] && printf '\e[36;136H\e[48;2;67;67;67m\e[1m5\e[0m'
+            [[ $CAMS_STATE != "_6" ]] && printf '\e[44;132H\e[48;2;67;67;67m\e[1m6\e[0m'
+            [[ $CAMS_STATE != "_7" ]] && printf '\e[43;176H\e[48;2;67;67;67m\e[1m11\e[0m'
+            [[ $CAMS_STATE != "_8" ]] && printf '\e[43;145H\e[48;2;67;67;67m\e[1m7\e[0m'
+            [[ $CAMS_STATE != "_9" ]] && printf '\e[47;145H\e[48;2;67;67;67m\e[1m8\e[0m'
+            [[ $CAMS_STATE != "_10" ]] && printf '\e[43;161H\e[48;2;67;67;67m\e[1m9\e[0m'
+            [[ $CAMS_STATE != "_11" ]] && printf '\e[47;161H\e[48;2;67;67;67m\e[1m10\e[0m'
+            [[ $TAB -eq 0 ]] && printf '\e[3;6HPress TAB to mute voice call'
+            [[ $CAMS_STATES == "_8_foxy" ]] && touch "$PROJECT_DIR/SEEN_FOXY" 2>/dev/null || true
+        fi
+
+        [[ -n $CUSTOM ]] && printf '\e[52;160HCustom Night: %s %s %s %s\e[1A' "$C_FREDDY" "$C_BONNIE" "$C_CHICA" "$C_FOXY"
+
+        choice_loop
+    done
+}
+
+choice_loop() {
+    while true; do
+        [[ -f "$PROJECT_DIR/BATTERY" ]] && read -r BATTERY < "$PROJECT_DIR/BATTERY" 2>/dev/null || true
+        [[ $BATTERY -le 0 ]] && { outage; return; }
+
+        if [[ $VIEW == "OFFICE" ]]; then
+            if [[ $L_DOOR -eq 1 ]]; then
+                printf '\e[47;5H\e[48;2;93;68;72mP\e[48;2;2;2;2mower:\e[48;2;0;0;0m %s%%\e[48;2;209;48;0m ' "$BATTERY"
+            else
+                printf '\e[47;5H\e[48;2;93;68;72mP\e[48;2;2;2;2mower:\e[48;2;0;0;0m %s%% ' "$BATTERY"
+            fi
+        else
+            printf '\e[47;5H\e[48;2;19;19;23mP\e[48;2;4;4;8mowe\e[48;2;4;4;8mr:\e[48;2;19;19;23m %s%%\e[48;2;19;19;23m ' "$BATTERY"
+        fi
+
+        [[ -f "$PROJECT_DIR/TIME" ]] && read -r TIME < "$PROJECT_DIR/TIME" 2>/dev/null || true
+        [[ $VIEW == "OFFICE" ]] && printf '\e[2;178H\e[48;2;32;26;50m%s AM' "$TIME" || printf '\e[3;177H\e[48;2;10;10;10m%s AM' "$TIME"
+
+        USAGE=1
+        [[ $L_DOOR -eq 1 ]] && ((USAGE++))
+        [[ $R_DOOR -eq 1 ]] && ((USAGE++))
+        [[ $L_LIGHTS -eq 1 ]] && ((USAGE++))
+        [[ $R_LIGHTS -eq 1 ]] && ((USAGE++))
+        [[ $VIEW == "CAMS" ]] && ((USAGE++))
+
+        cat "$ASSETS_DIR/power_${USAGE}.ans" 2>/dev/null || true
+
+        OLD_CHICA=$CHICA; OLD_BONNIE=$BONNIE; OLD_FOXY=$FOXY; OLD_FREDDY=$FREDDY
+
+        get_input
+        [[ -z $CHOICE_INPUT ]] && { sleep 0.1; continue; }
+
+        case ${CHOICE_INPUT^^} in
+            Q) if [[ $VIEW == "OFFICE" && $GOLDENFREDDY -eq 0 ]]; then
+                   [[ $L_DOOR -eq 1 ]] && { L_DOOR=0; REVERSE="_rev"; } || { audio_start "door.mp3" "menu" "false" 100; L_DOOR=1; }
+               elif [[ $GOLDENFREDDY -eq 1 ]]; then audio_start "error.mp3" "sfx" "false" 100; fi
+               break ;;
+            E) if [[ $VIEW == "OFFICE" && $GOLDENFREDDY -eq 0 ]]; then
+                   [[ $R_DOOR -eq 1 ]] && { R_DOOR=0; REVERSE="_rev"; } || { audio_start "door.mp3" "menu" "false" 100; R_DOOR=1; }
+               elif [[ $GOLDENFREDDY -eq 1 ]]; then audio_start "error.mp3" "sfx" "false" 100; fi
+               break ;;
+            A) if [[ $VIEW == "OFFICE" && $GOLDENFREDDY -eq 0 ]]; then
+                   [[ $L_LIGHTS -eq 1 ]] && L_LIGHTS=0 || L_LIGHTS=1
+               elif [[ $GOLDENFREDDY -eq 1 ]]; then audio_start "error.mp3" "sfx" "false" 100; fi
+               break ;;
+            D) if [[ $VIEW == "OFFICE" && $GOLDENFREDDY -eq 0 ]]; then
+                   [[ $R_LIGHTS -eq 1 ]] && R_LIGHTS=0 || R_LIGHTS=1
+               elif [[ $GOLDENFREDDY -eq 1 ]]; then audio_start "error.mp3" "sfx" "false" 100; fi
+               break ;;
+        esac
+
+        if [[ $VIEW == "CAMS" ]]; then
+            local changed=0
+            case ${CHOICE_INPUT^^} in
+                1) [[ $CAMS_STATE != "_1" ]] && CAMS_STATE="_1" && changed=1 ;;
+                2) [[ $CAMS_STATE != "_2" ]] && CAMS_STATE="_2" && changed=1 ;;
+                3) [[ $CAMS_STATE != "_3" ]] && CAMS_STATE="_3" && changed=1 ;;
+                4) [[ $CAMS_STATE != "_4" ]] && CAMS_STATE="_4" && changed=1 ;;
+                5) [[ $CAMS_STATE != "_5" ]] && CAMS_STATE="_5" && changed=1 ;;
+                6) [[ $CAMS_STATE != "_6" ]] && CAMS_STATE="_6" && changed=1 ;;
+                -) [[ $CAMS_STATE != "_7" ]] && CAMS_STATE="_7" && changed=1 ;;
+                7) [[ $CAMS_STATE != "_8" ]] && CAMS_STATE="_8" && changed=1 ;;
+                8) [[ $CAMS_STATE != "_9" ]] && CAMS_STATE="_9" && changed=1 ;;
+                9) [[ $CAMS_STATE != "_10" ]] && CAMS_STATE="_10" && changed=1 ;;
+                '0') [[ $CAMS_STATE != "_11" ]] && CAMS_STATE="_11" && changed=1 ;;
+            esac
+            [[ $changed -eq 1 ]] && { audio_start "blip3.mp3" "sfx" "false" 100; break; }
+        fi
+
+        if [[ $VIEW == "OFFICE" ]]; then
+            [[ ${CHOICE_INPUT^^} == "H" ]] && audio_start "PartyFavorraspyPart_AC01__3.mp3" "sfx" "false" 95
+        fi
+
+        if [[ $CHOICE_INPUT == "SPACE" ]]; then
+            if [[ $VIEW == "OFFICE" ]]; then
+                L_LIGHTS=0; R_LIGHTS=0
+                printf '%s' "$STATELINE" > "$PROJECT_DIR/office_states" 2>/dev/null || true
+                audio_stop "fan"
+                audio_start "Buzz_Fan_Florescent2.mp3" "fan2" "true" 8
+                audio_start "camera_up.mp3" "camera_up" "false" 100
+                VIEW="CAMS"
+                touch "$PROJECT_DIR/saw_cams" 2>/dev/null || true
+                [[ $GOLDENFREDDY -eq 1 ]] && audio_stop "golden"
+                [[ $GOLDENFREDDY -eq 1 ]] && GOLDENFREDDY=0 || { local gf=$((RANDOM % 100 + 1)); [[ $gf -le 6 ]] && GOLDENFREDDY=1; }
+            else
+                audio_stop "fan2"
+                audio_start "Buzz_Fan_Florescent2.mp3" "fan" "true" 25
+                audio_start "camera_down.mp3" "camera_down" "false" 100
+                audio_stop "camera_up"
+                VIEW="OFFICE"
+                [[ $GOLDENFREDDY -eq 1 ]] && { audio_start "whispering2.mp3" "golden" "true" 100; R_DOOR=0; L_DOOR=0; R_LIGHTS=0; L_LIGHTS=0; }
+                rm -f "$PROJECT_DIR/cams_state" 2>/dev/null || true
+            fi
+            break
+        fi
+
+        [[ ${CHOICE_INPUT^^} == "TAB" && $TAB -eq 0 ]] && { TAB=1; audio_stop "voiceover"; break; }
+
+        [[ $CHOICE_INPUT == $'\x0e' ]] && { JUMPSCARE="_chica"; game_over; return; }
+        [[ $CHOICE_INPUT == $'\x02' ]] && { JUMPSCARE="_bonnie"; game_over; return; }
+        [[ $CHOICE_INPUT == $'\x18' ]] && { JUMPSCARE="_foxy"; game_over; return; }
+        [[ $CHOICE_INPUT == $'\x0f' ]] && { kill $EVENTS_PID 2>/dev/null || true; outage; return; }
+        [[ $CHOICE_INPUT == $'\x17' ]] && { win_game; return; }
+        [[ $CHOICE_INPUT == $'\x11' ]] && exit 0
+
+        if [[ $CHOICE_INPUT == "TIMEOUT" ]]; then
+            [[ -f "$PROJECT_DIR/WIN" ]] && { win_game; return; }
+            [[ -f "$PROJECT_DIR/MOVEMENTS.cmd" ]] && source "$PROJECT_DIR/MOVEMENTS.cmd" 2>/dev/null || true
+
+            [[ $OLD_BONNIE -ne $BONNIE && $BONNIE -eq 6 ]] && WS_BONNIE=1
+            [[ $OLD_CHICA -ne $CHICA && $CHICA -eq 6 ]] && WS_CHICA=1
+
+            if [[ $CHICA -gt 6 && $STATELINE != *"doorR"* ]]; then JUMPSCARE="_chica"; game_over; return; fi
+            if [[ $FREDDY -eq 5 && $STATELINE != *"doorR"* ]]; then JUMPSCARE="_freddy"; game_over; return; fi
+            if [[ $BONNIE -gt 6 && $STATELINE != *"doorL"* ]]; then JUMPSCARE="_bonnie"; game_over; return; fi
+            if [[ $FOXY -eq 5 && $STATELINE != *"doorL"* ]]; then JUMPSCARE="_foxy"; game_over; return; fi
+
+            [[ $OLD_CHICA -eq 3 && $CHICA -ne 3 ]] && audio_stop "oven"
+            [[ $OLD_CHICA -ne $CHICA && $CHICA -eq 3 ]] && audio_start "oven.mp3" "oven" "true" 9
+
+            if [[ $VIEW == "CAMS" ]]; then
+                case $CAMS_STATE in
+                    _1)  [[ $OLD_CHICA -eq 0 && $CHICA -ge 1 ]] && break
+                         [[ $OLD_BONNIE -eq 0 && $BONNIE -ge 1 ]] && break
+                         [[ $OLD_FREDDY -eq 0 && $FREDDY -ge 1 ]] && break ;;
+                    _2)  [[ $OLD_CHICA -eq 1 && $CHICA -ne 1 ]] && break
+                         [[ $OLD_CHICA -ne 1 && $CHICA -eq 1 ]] && break
+                         [[ $OLD_BONNIE -eq 1 && $BONNIE -ne 1 ]] && break
+                         [[ $OLD_BONNIE -ne 1 && $BONNIE -eq 1 ]] && break
+                         if [[ $BONNIE -ne 1 && $CHICA -ne 1 ]]; then
+                             [[ $OLD_FREDDY -eq 1 && $FREDDY -ne 1 ]] && break
+                             [[ $OLD_FREDDY -ne 1 && $FREDDY -eq 1 ]] && break
+                         fi ;;
+                    _3)  [[ $OLD_BONNIE -eq 2 && $BONNIE -ne 2 ]] && break
+                         [[ $OLD_BONNIE -ne 2 && $BONNIE -eq 2 ]] && break ;;
+                    _4)  [[ $OLD_CHICA -eq 2 && $CHICA -ne 2 ]] && break
+                         [[ $OLD_CHICA -ne 2 && $CHICA -eq 2 ]] && break
+                         if [[ $CHICA -ne 2 ]]; then
+                             [[ $OLD_FREDDY -eq 2 && $FREDDY -ne 2 ]] && break
+                             [[ $OLD_FREDDY -ne 2 && $FREDDY -eq 2 ]] && break
+                         fi ;;
+                    _5)  [[ $OLD_FOXY -ne $FOXY && $FOXY -gt 0 && $FOXY -le 3 ]] && break
+                         [[ $OLD_FOXY -ne $FOXY && $OLD_FOXY -eq 4 && $FOXY -le 2 ]] && break ;;
+                    _6)  [[ $OLD_BONNIE -eq 3 && $BONNIE -ne 3 ]] && break
+                         [[ $OLD_BONNIE -ne 3 && $BONNIE -eq 3 ]] && break ;;
+                    _8)  [[ $OLD_FOXY -ne $FOXY && $FOXY -eq 3 ]] && break
+                         if [[ $OLD_FOXY -ne $FOXY && $FOXY -eq 4 ]]; then
+                             ((FOXY++)); rm -f "$PROJECT_DIR/cams_state" 2>/dev/null || true
+                             audio_stop "fan2"; audio_start "Buzz_Fan_Florescent2.mp3" "fan" "true" 25
+                             audio_start "camera_down.mp3" "camera_down" "false" 100; audio_stop "camera_up"
+                             VIEW="OFFICE"; break
+                         fi
+                         [[ $OLD_BONNIE -eq 4 && $BONNIE -ne 4 ]] && break
+                         [[ $OLD_BONNIE -ne 4 && $BONNIE -eq 4 ]] && break ;;
+                    _9)  [[ $OLD_BONNIE -eq 5 && $BONNIE -ne 5 ]] && break
+                         [[ $OLD_BONNIE -ne 5 && $BONNIE -eq 5 ]] && break ;;
+                    _10) [[ $OLD_CHICA -eq 4 && $CHICA -ne 4 ]] && break
+                         [[ $OLD_CHICA -ne 4 && $CHICA -eq 4 ]] && break
+                         if [[ $CHICA -ne 5 ]]; then
+                             [[ $OLD_FREDDY -eq 3 && $FREDDY -ne 3 ]] && break
+                             [[ $OLD_FREDDY -ne 3 && $FREDDY -eq 3 ]] && break
+                         fi ;;
+                    _11) [[ $OLD_CHICA -eq 5 && $CHICA -ne 5 ]] && break
+                         [[ $OLD_CHICA -ne 5 && $CHICA -eq 5 ]] && break
+                         if [[ $CHICA -ne 6 ]]; then
+                             [[ $OLD_FREDDY -eq 4 && $FREDDY -ne 4 ]] && break
+                             [[ $OLD_FREDDY -ne 4 && $FREDDY -eq 4 ]] && break
+                         fi ;;
+                esac
+            fi
+
+            if [[ $VIEW == "OFFICE" ]]; then
+                if [[ $STATELINE == *"lightR"* || $STATELINE == *"chica"* ]]; then
+                    [[ $OLD_CHICA -eq 5 && $CHICA -lt 5 ]] && break
+                    [[ $CHICA -ge 5 ]] && break
+                fi
+                if [[ $STATELINE == *"lightL"* || $STATELINE == *"bonnie"* ]]; then
+                    [[ $OLD_BONNIE -eq 6 && $BONNIE -lt 5 ]] && break
+                    [[ $BONNIE -ge 6 ]] && break
+                fi
+            fi
+        fi
+    done
+
+    if [[ -z $CHOICE_INPUT || $CHOICE_INPUT == "TIMEOUT" ]]; then
+        sleep 0.1
+    fi
+}
+
+outage() {
+    audio_stop "fan"; audio_stop "fan2"; audio_stop "sfx"
+    audio_start "powerdown.mp3" "powerdown" "false" 100
+    [[ $VIEW != "OFFICE" ]] && { audio_start "camera_down.mp3" "camera_down" "false" 100; audio_stop "camera_up"; }
+    cat "$ASSETS_DIR/office_outage.ans" 2>/dev/null || true
+    audio_stop "ambience"; audio_stop "voiceover"; audio_stop "oven"; audio_stop "golden"
+
+    local rnd=$((RANDOM % 2 + 1))
+    [[ $rnd -eq 1 ]] && { sleep 2; audio_start "running_fast3.mp3" "sfx" "false" 22; sleep 3; } || { sleep 3; audio_start "deepsteps.mp3" "sfx" "false" 22; sleep 6; }
+    rnd=$((RANDOM % 2 + 1))
+    [[ $rnd -eq 1 ]] && { audio_start "running_fast3.mp3" "sfx" "false" 22; sleep 3; } || { audio_start "deepsteps.mp3" "sfx" "false" 22; sleep 6; }
+    rnd=$((RANDOM % 2 + 1))
+    [[ $rnd -eq 1 ]] && { audio_start "running_fast3.mp3" "sfx" "false" 22; sleep 3; }
+    audio_start "deepsteps.mp3" "sfx" "false" 22; sleep 7
+    audio_start "musicbox.mp3" "musicbox" "false" 90
+
+    (
+        while true; do
+            for f in "$ASSETS_DIR/office_outage_freddy.ans" "$ASSETS_DIR/office_outage_half.ans" \
+                     "$ASSETS_DIR/office_outage_freddy.ans" "$ASSETS_DIR/office_outage_half.ans" \
+                     "$ASSETS_DIR/office_outage_freddy.ans" "$ASSETS_DIR/office_outage_half.ans" \
+                     "$ASSETS_DIR/office_outage_freddy.ans" "$ASSETS_DIR/office_outage_half.ans" \
+                     "$ASSETS_DIR/office_outage_freddy.ans" "$ASSETS_DIR/office_outage_half.ans" \
+                     "$ASSETS_DIR/office_outage_freddy.ans" "$ASSETS_DIR/office_outage_half.ans"; do
+                cat "$f" 2>/dev/null || true
+                [[ -f "$TEMP_DIR/STOP" ]] && exit 0
+                sleep 0.1
+            done
+        done
+    ) &
+    local ofp=$!
+
+    sleep $((RANDOM % 9 + 11))
+    touch "$TEMP_DIR/STOP" 2>/dev/null || true
+    sleep 1
+    rm -f "$TEMP_DIR/STOP" 2>/dev/null || true
+    kill $ofp 2>/dev/null || true
+    audio_stop "musicbox"
+    cat "$ASSETS_DIR/office_outage.ans" 2>/dev/null || true
+    [[ -f "$PROJECT_DIR/WIN" ]] && win_game || { JUMPSCARE="_freddy"; game_over; }
+}
+
+game_over() {
+    pkill -f "fnaf-cli.*events" 2>/dev/null || true
+    audio_stop "fan"; audio_stop "fan2"; rm -f "$PROJECT_DIR/SEEN_FOXY" 2>/dev/null || true
+    audio_start "XSCREAM.mp3" "sfx" "false" 100
+    cat "$ASSETS_DIR/jumpscare${JUMPSCARE}.ans" 2>/dev/null || true
+    audio_stop "ambience"; audio_stop "voiceover"; audio_stop "oven"; audio_stop "golden"
+    rm -f "$PROJECT_DIR/office_states" "$PROJECT_DIR/cams_state" "$PROJECT_DIR/MOVEMENTS.cmd" \
+          "$PROJECT_DIR/refresh" "$PROJECT_DIR/SEEN_FOXY" "$PROJECT_DIR/BATTERY" \
+          "$PROJECT_DIR/TIME" "$PROJECT_DIR/saw_freddy" "$PROJECT_DIR/saw_cams"  2>/dev/null || true
+    sleep 4
+    cat "$ASSETS_DIR/gameover.ans" 2>/dev/null || true
+    sleep 9
+    main
+}
+
+win_game() {
+    pkill -f "fnaf-cli.*events" 2>/dev/null || true
+    audio_stop "sfx"; audio_stop "fan"; audio_stop "fan2"; audio_stop "ambience"
+    audio_stop "voiceover"; audio_stop "oven"; audio_stop "golden"
+    rm -f "$PROJECT_DIR/office_states" "$PROJECT_DIR/cams_state" "$PROJECT_DIR/MOVEMENTS.cmd" \
+          "$PROJECT_DIR/refresh" "$PROJECT_DIR/SEEN_FOXY" "$PROJECT_DIR/BATTERY" \
+          "$PROJECT_DIR/TIME" "$PROJECT_DIR/saw_freddy" "$PROJECT_DIR/saw_cams" "$PROJECT_DIR/WIN" 2>/dev/null || true
+    audio_start "chimes2.mp3" "sfx" "false" 100
+    cat "$ASSETS_DIR/5am.ans" 2>/dev/null || true
+    sleep 4
+    audio_start "CROWD_SMALL_CHIL_EC049202.mp3" "sfx" "false" 100
+
+    printf '\e[48;2;0;0;0m\e[27H\e[80C\e[38;2;0;0;0;48;2;255;255;255m▄▄▄▄▄\e[48;2;0;0;0m        \e[38;2;0;0;0;48;2;255;255;255m▄▄\e[48;2;0;0;0m    \e[38;2;0;0;0;48;2;255;255;255m▄▄\e[48;2;0;0;0m \e[38;2;0;0;0;48;2;255;255;255m▄▄\e[48;2;0;0;0m    \e[38;2;0;0;0;48;2;255;255;255m▄\e[38;2;0;0;0;48;2;224;224;224m▄\e[48;2;0;0;0m\e[m'
+    printf '\e[48;2;0;0;0m\e[26H\e[78C \e[48;2;255;255;255m  \e[38;2;255;255;255;48;2;0;0;0m▄▄▄▄\e[48;2;255;255;255m  \e[48;2;0;0;0m      \e[48;2;255;255;255m  \e[48;2;0;0;0m    \e[48;2;255;255;255m  \e[48;2;0;0;0m \e[48;2;255;255;255m  \e[48;2;0;0;0m    \e[48;2;255;255;255m \e[48;2;224;224;224m \e[48;2;0;0;0m\e[m'
+    printf '\e[48;2;0;0;0m\e[25H\e[78C \e[48;2;255;255;255m  \e[38;2;0;0;0;48;2;255;255;255m▄▄▄▄\e[38;2;255;255;255;48;2;69;69;69m▄\e[38;2;255;255;255;48;2;6;6;6m▄\e[48;2;0;0;0m      \e[48;2;255;255;255m  \e[38;2;255;255;255;48;2;69;69;69m▄▄▄▄\e[48;2;255;255;255m  \e[48;2;0;0;0m \e[48;2;255;255;255m  \e[48;2;0;0;0m \e[38;2;0;0;0;48;2;255;255;255m▄▄\e[48;2;0;0;0m \e[48;2;255;255;255m \e[48;2;224;224;224m \e[48;2;0;0;0m\e[m'
+    printf '\e[48;2;0;0;0m\e[24H\e[78C \e[48;2;255;255;255m  \e[38;2;255;255;255;48;2;0;0;0m▄▄▄▄\e[48;2;0;0;0m        \e[48;2;255;255;255m  \e[48;2;0;0;0m    \e[48;2;255;255;255m  \e[48;2;0;0;0m \e[48;2;255;255;255m  \e[48;2;0;0;0m \e[48;2;255;255;255m  \e[48;2;0;0;0m \e[48;2;255;255;255m \e[48;2;224;224;224m \e[48;2;0;0;0m\e[m'
+    printf '\e[48;2;0;0;0m\e[23H\e[78C  \e[48;2;255;255;255m  \e[38;2;0;0;0;48;2;108;108;108m▄▄▄\e[48;2;0;0;0m        \e[48;2;255;255;255m  \e[38;2;0;0;0;48;2;108;108;108m▄▄▄▄\e[48;2;255;255;255m  \e[48;2;0;0;0m \e[48;2;255;255;255m   \e[48;2;0;0;0m \e[48;2;255;255;255m   \e[48;2;224;224;224m \e[48;2;0;0;0m\e[m'
+    printf '\e[48;2;0;0;0m\e[22H\e[78C    \e[38;2;255;255;255;48;2;0;0;0m▄▄▄\e[48;2;0;0;0m          \e[38;2;255;255;255;48;2;0;0;0m▄▄▄▄\e[38;2;17;17;17;48;2;0;0;0m▄\e[48;2;0;0;0m  \e[38;2;255;255;255;48;2;0;0;0m▄▄\e[48;2;0;0;0m    \e[38;2;255;255;255;48;2;0;0;0m▄\e[38;2;224;224;224;48;2;0;0;0m▄\e[48;2;0;0;0m\e[m'
+    sleep 7; audio_stop "sfx"
+
+    [[ $freddy_level -le 4 ]] && ((freddy_level++))
+    [[ $freddy_level -le 5 ]] && save_game
+    [[ "$DIFFICULTY" == "20 20 20 20" ]] && { [[ $freddy_level -le 5 ]] && ((freddy_level++)); [[ $freddy_level -le 6 ]] && save_game; }
+
+    main
+}
+
+main "$@"
